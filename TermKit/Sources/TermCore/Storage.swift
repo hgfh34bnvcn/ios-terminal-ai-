@@ -63,13 +63,24 @@ public final class Storage {
         try? FileManager.default.removeItem(at: sessionsDirectory.appendingPathComponent("\(id.uuidString).json"))
     }
 
+    /// Just the fields the session list needs, so listing does not build every transcript.
+    private struct Head: Decodable {
+        var id: UUID
+        var title: String?
+        var updatedAt: Date?
+        var pinned: Bool?
+        var hostID: UUID?
+        var folder: String?
+    }
+
     /// Most recently updated first.
     public func sessionSummaries() -> [SessionSummary] {
         let files = (try? FileManager.default.contentsOfDirectory(at: sessionsDirectory, includingPropertiesForKeys: nil)) ?? []
         return files.compactMap { url -> SessionSummary? in
             guard url.pathExtension == "json", let data = try? Data(contentsOf: url),
-                  let session = try? decoder.decode(Session.self, from: data) else { return nil }
-            return SessionSummary(id: session.id, title: session.title, updatedAt: session.updatedAt)
+                  let head = try? decoder.decode(Head.self, from: data) else { return nil }
+            return SessionSummary(id: head.id, title: head.title ?? Session.untitled, updatedAt: head.updatedAt ?? .distantPast,
+                                  pinned: head.pinned ?? false, hostID: head.hostID, folder: head.folder ?? "")
         }
         .sorted { $0.updatedAt > $1.updatedAt }
     }

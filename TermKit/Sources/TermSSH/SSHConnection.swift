@@ -27,6 +27,8 @@ public struct SSHCredentials: Sendable {
 public enum SSHError: LocalizedError, Equatable {
     case hostKeyMismatch(expected: String, received: String)
     case unsupportedKey(String)
+    case authenticationFailed
+    case connectionFailed(String)
     case timedOut(seconds: Int)
 
     public var errorDescription: String? {
@@ -35,6 +37,10 @@ public enum SSHError: LocalizedError, Equatable {
             return "HOST KEY CHANGED. Expected \(SSHKeys.fingerprint(ofOpenSSHKey: expected)), server sent \(SSHKeys.fingerprint(ofOpenSSHKey: received)). Refusing to connect; if the server was reinstalled, forget its key in settings."
         case .unsupportedKey(let detail):
             return "unsupported private key: \(detail). Use an Ed25519 or RSA key in OpenSSH format."
+        case .authenticationFailed:
+            return "the server rejected the login; check the username and the password or key"
+        case .connectionFailed(let detail):
+            return "could not connect: \(detail)"
         case .timedOut(let seconds):
             return "timed out after \(seconds)s; the command may still be running on the host"
         }
@@ -110,19 +116,34 @@ private final class HostKeyRecorder: NIOSSHClientServerAuthenticationDelegate, @
     }
 }
 
-public final class SSHConnection: RemoteShell, @unchecked Sendable {
-    public let label: String
-    /// The server's host key in OpenSSH format, to be stored and required on later connects.
+/// Opens the SFTP channel on first use and keeps it for later file transfers.
+private actor SFTPChannel {
+    private var client: SFTPClient?
+
+    func get(_ ssh: SSHClient) async throws -> SFTPClient {
+        if let client, client.isActive { return client }
+        let opened = try await ssh.openSFTP()
+        client = opened
+        return opened
+    }
+
+    func close() async {
+        try? await client?.close()
+        client = nil
+    }
+}
+
+public final class SSHConnection: RemoteConnection, @unchecked Sendable {
     public let hostKey: String
     private let client: SSHClient
+    private let sftp = SFTPChannel()
 
-    private init(client: SSHClient, label: String, hostKey: String) {
+    private init(client: SSHClient, hostKey: String) {
         self.client = client
-        self.label = label
         self.hostKey = hostKey
     }
 
-    public static func connect(_ credentials: SSHCredentials, label: String, trustedHostKey: String?) async throws -> SSHConnection {
+    public static func connect(_ credentials: SSHCredentials, trustedHostKey: String?) async throws -> SSHConnection {
         let recorder = HostKeyRecorder(trusted: trustedHostKey)
         let authentication = try SSHKeys.authentication(for: credentials)
         do {
@@ -132,21 +153,26 @@ public final class SSHConnection: RemoteShell, @unchecked Sendable {
                 authenticationMethod: authentication,
                 hostKeyValidator: .custom(recorder),
                 reconnect: .never)
-            return SSHConnection(client: client, label: label, hostKey: recorder.received ?? "")
+            return SSHConnection(client: client, hostKey: recorder.received ?? "")
         } catch {
             // The handshake surfaces a generic failure; report the precise reason when it was the host key.
             if let mismatch = recorder.mismatch { throw mismatch }
-            throw error
+            if error is CancellationError || error is SSHError { throw error }
+            let detail = String(describing: error)
+            if detail.localizedCaseInsensitiveContains("authentication") { throw SSHError.authenticationFailed }
+            throw SSHError.connectionFailed(String(detail.prefix(300)))
         }
     }
 
+    public var hostKeyFingerprint: String { SSHKeys.fingerprint(ofOpenSSHKey: hostKey) }
     public var isConnected: Bool { client.isConnected }
 
     public func close() async {
+        await sftp.close()
         try? await client.close()
     }
 
-    public func run(command: String, timeout: TimeInterval, onOutput: @escaping @Sendable (String) -> Void) async throws -> Int {
+    public func exec(_ command: String, timeout: TimeInterval, onOutput: @escaping @Sendable (String) -> Void) async throws -> Int {
         let client = self.client
         return try await withThrowingTaskGroup(of: Int.self) { group in
             group.addTask {
@@ -171,5 +197,51 @@ public final class SSHConnection: RemoteShell, @unchecked Sendable {
             guard let code = try await group.next() else { throw CancellationError() }
             return code
         }
+    }
+
+    /// SFTP reports failures as bare status codes; turn them into something a person or the model can act on.
+    private static func describe(_ error: Error, _ path: String) -> Error {
+        if error is CancellationError || error is EnvironmentError { return error }
+        if case SFTPError.errorStatus(let status) = error {
+            return EnvironmentError("\(path): \(status.message.isEmpty ? "the server refused the request" : status.message)")
+        }
+        return EnvironmentError("\(path): file transfer failed (\(String(String(describing: error).prefix(200))))")
+    }
+
+    public func readFile(_ path: String, maxBytes: Int) async throws -> Data {
+        do {
+            let channel = try await sftp.get(client)
+            return try await channel.withFile(filePath: path, flags: .read) { file in
+                if let size = try await file.readAttributes().size, size > UInt64(maxBytes) {
+                    throw EnvironmentError("file is too large (\(size) bytes)")
+                }
+                return Data(try await file.readAll().readableBytesView)
+            }
+        } catch {
+            throw Self.describe(error, path)
+        }
+    }
+
+    public func writeFile(_ path: String, _ data: Data) async throws {
+        do {
+            let channel = try await sftp.get(client)
+            try await channel.withFile(filePath: path, flags: [.write, .create, .truncate]) { file in
+                try await file.write(ByteBuffer(bytes: data))
+            }
+        } catch {
+            throw Self.describe(error, path)
+        }
+    }
+}
+
+/// Connects to the hosts saved in the app.
+public struct SSHConnector: RemoteConnecting {
+    public init() {}
+
+    public func connect(to host: SSHHost, secret: String, passphrase: String?) async throws -> RemoteConnection {
+        let credentials = SSHCredentials(
+            host: host.host, port: host.port, username: host.username,
+            secret: host.auth == .password ? .password(secret) : .privateKey(pem: secret, passphrase: passphrase))
+        return try await SSHConnection.connect(credentials, trustedHostKey: host.trustedHostKey)
     }
 }

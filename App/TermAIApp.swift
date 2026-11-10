@@ -88,7 +88,7 @@ extension AppModel {
 }
 
 extension PermissionMode {
-    /// Short form for the chip under the composer, where four controls share one row.
+    /// Short form for tight rows: the chips under the composer and the picker in Settings.
     var chipTitle: String {
         switch self {
         case .ask: return "Ask"

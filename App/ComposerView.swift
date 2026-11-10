@@ -191,10 +191,11 @@ private struct ChipRow: View {
                          tint: model.session.mode == .bypass ? palette.error : nil, palette: palette)
                 }
                 if let context = model.contextLabel {
-                    Text("\(context) tokens")
+                    Text(context)
                         .font(palette.caption)
                         .foregroundStyle(palette.dim)
                         .padding(.horizontal, 4)
+                        .accessibilityLabel("\(context) tokens in context")
                 }
             }
             .padding(.horizontal, 2)

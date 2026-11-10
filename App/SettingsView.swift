@@ -101,7 +101,7 @@ struct SettingsView: View {
         Section {
             Picker("New sessions start in", selection: binding(\.defaultMode)) {
                 ForEach(PermissionMode.allCases) { mode in
-                    Text(mode.title).tag(mode)
+                    Text(mode.chipTitle).tag(mode)
                 }
             }
             NavigationLink(value: SettingsRoute.instructions) {
@@ -169,6 +169,8 @@ private struct ConnectionEditor: View {
                         Text(format.title).tag(format)
                     }
                 }
+                // A menu row cuts values this long off in the middle.
+                .pickerStyle(.segmented)
             } header: {
                 Text("Connection")
             } footer: {

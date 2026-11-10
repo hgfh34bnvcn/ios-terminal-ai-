@@ -78,10 +78,16 @@ jobs:
           shoot() {
             name=$1; shift
             xcrun simctl launch "$UDID" "$BUNDLE_ID" -demo "$@"
-            sleep 8
+            sleep 15
             xcrun simctl io "$UDID" screenshot "shots/$name.png"
             xcrun simctl terminate "$UDID" "$BUNDLE_ID"
+            sleep 3
           }
+          # The first launch on a fresh simulator is slow; warm it up so no shot catches the launch screen.
+          xcrun simctl launch "$UDID" "$BUNDLE_ID" -demo
+          sleep 45
+          xcrun simctl terminate "$UDID" "$BUNDLE_ID"
+          sleep 3
           for theme in dark crt-green crt-amber light; do shoot "$theme" -theme "$theme"; done
           shoot approval -demoApproval
           shoot settings -demoSettings

@@ -107,29 +107,32 @@ private struct TranscriptView: View {
 
     var body: some View {
         let palette = model.palette
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    ForEach(model.session.transcript) { item in
-                        ItemView(item: item, palette: palette)
+        GeometryReader { geometry in
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        ForEach(model.session.transcript) { item in
+                            ItemView(item: item, palette: palette)
+                        }
+                        if model.isRunning, model.pendingApproval == nil {
+                            Text("▍").font(palette.font).foregroundStyle(palette.accent)
+                        } else if let usage = model.usageLine {
+                            Text(usage).font(palette.small).foregroundStyle(palette.dim)
+                        }
+                        Color.clear.frame(height: 1).id("bottom")
                     }
-                    if model.isRunning, model.pendingApproval == nil {
-                        Text("▍").font(palette.font).foregroundStyle(palette.accent)
-                    } else if let usage = model.usageLine {
-                        Text(usage).font(palette.small).foregroundStyle(palette.dim)
-                    }
-                    Color.clear.frame(height: 1).id("bottom")
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    // A short transcript starts at the top, like a fresh terminal, rather than hugging the input.
+                    .frame(maxWidth: .infinity, minHeight: geometry.size.height, alignment: .topLeading)
+                    .shadow(color: model.theme.glow ? palette.text.opacity(0.55) : .clear, radius: 3)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .shadow(color: model.theme.glow ? palette.text.opacity(0.55) : .clear, radius: 3)
-            }
-            // Stay pinned to the newest output while it streams, unless the user scrolls up.
-            .defaultScrollAnchor(.bottom)
-            .scrollDismissesKeyboard(.interactively)
-            .onChange(of: model.scrollTick) {
-                proxy.scrollTo("bottom", anchor: .bottom)
+                // Stay pinned to the newest output while it streams, unless the user scrolls up.
+                .defaultScrollAnchor(.bottom)
+                .scrollDismissesKeyboard(.interactively)
+                .onChange(of: model.scrollTick) {
+                    proxy.scrollTo("bottom", anchor: .bottom)
+                }
             }
         }
     }
@@ -247,7 +250,7 @@ private struct BottomBar: View {
             }
             Rectangle().fill(palette.dim.opacity(0.3)).frame(height: 1)
 
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
+            HStack(alignment: .top, spacing: 6) {
                 Text(model.setup == nil ? "❯" : "?").font(palette.bold).foregroundStyle(palette.accent)
                 Group {
                     if model.inputIsSecret {

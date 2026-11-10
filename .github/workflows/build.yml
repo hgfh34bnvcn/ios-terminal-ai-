@@ -18,12 +18,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Core tests (Linux)
-        run: swift --version && swift test --package-path TermKit
+        run: |
+          swift --version
+          python3 TermKit/Tests/mock_server.py 8765 &
+          sleep 1
+          TERMAI_TEST_BASEURL=http://127.0.0.1:8765 swift test --package-path TermKit
+
+  # The mock gateway lets the streaming client run against real HTTP on Apple's URLSession.
+  core-macos:
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Core tests (macOS)
+        run: |
+          swift --version
+          python3 TermKit/Tests/mock_server.py 8765 &
+          sleep 1
+          TERMAI_TEST_BASEURL=http://127.0.0.1:8765 swift test --package-path TermKit
 
   ipa:
     # Intel image: the arm64 macOS pool was leaving jobs queued until they timed out.
     runs-on: macos-15-intel
-    timeout-minutes: 45
+    # Two builds, a simulator boot of ten minutes or more, and ten screenshots that each wait for the app.
+    timeout-minutes: 90
     env:
       BUNDLE_ID: io.github.hgfh34bnvcn.termai
     steps:
@@ -32,13 +50,24 @@ jobs:
       - name: Toolchain
         run: xcodebuild -version && swift --version
 
-      - name: Core tests
-        run: swift test --package-path TermKit
-
       - name: Generate Xcode project
         run: |
           command -v xcodegen >/dev/null || brew install xcodegen
           xcodegen generate
+
+      - name: Build for the simulator
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json, sys
+          runtimes = json.load(sys.stdin)['devices']
+          print(next(d['udid'] for key in sorted(runtimes, reverse=True) if 'iOS' in key
+                     for d in runtimes[key] if d['name'].startswith('iPhone')))")
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcodebuild build -quiet \
+            -project TermAI.xcodeproj -scheme TermAI -configuration Debug \
+            -sdk iphonesimulator -destination "id=$UDID" \
+            -derivedDataPath build/sim \
+            CODE_SIGNING_ALLOWED=NO
 
       - name: Build unsigned IPA
         run: |
@@ -58,39 +87,28 @@ jobs:
           path: out/TermAI-unsigned.ipa
           if-no-files-found: error
 
-      # Launches the app in demo mode on a simulator so the UI can be reviewed without a device.
+      # Launches the app with sample content on a simulator so the UI can be reviewed without a device.
       - name: Simulator screenshots
         run: |
-          UDID=$(xcrun simctl list devices available -j | python3 -c "
-          import json, sys
-          runtimes = json.load(sys.stdin)['devices']
-          print(next(d['udid'] for key in sorted(runtimes, reverse=True) if 'iOS' in key
-                     for d in runtimes[key] if d['name'].startswith('iPhone')))")
-          xcodebuild build -quiet \
-            -project TermAI.xcodeproj -scheme TermAI -configuration Debug \
-            -sdk iphonesimulator -destination "id=$UDID" \
-            -derivedDataPath build/sim \
-            CODE_SIGNING_ALLOWED=NO
           xcrun simctl boot "$UDID"
-          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl bootstatus "$UDID" -b > /dev/null
           xcrun simctl install "$UDID" build/sim/Build/Products/Debug-iphonesimulator/TermAI.app
           mkdir -p shots
           shoot() {
-            name=$1; shift
-            xcrun simctl launch "$UDID" "$BUNDLE_ID" -demo "$@"
-            sleep 15
+            name=$1; screen=$2; theme=$3
+            xcrun simctl launch "$UDID" "$BUNDLE_ID" -demoScreen "$screen" -theme "$theme"
+            marker="$(xcrun simctl get_app_container "$UDID" "$BUNDLE_ID" data)/tmp/demo-ready"
+            # The app writes this file once its first screen is up; a hosted runner can take minutes to get there.
+            for _ in $(seq 1 90); do [ -f "$marker" ] && break; sleep 2; done
+            [ -f "$marker" ] || echo "::warning::$name: the app did not report that it was ready"
+            sleep 8
             xcrun simctl io "$UDID" screenshot "shots/$name.png"
-            xcrun simctl terminate "$UDID" "$BUNDLE_ID"
-            sleep 3
+            xcrun simctl terminate "$UDID" "$BUNDLE_ID" || true
+            rm -f "$marker"
+            sleep 2
           }
-          # The first launch on a fresh simulator is slow; warm it up so no shot catches the launch screen.
-          xcrun simctl launch "$UDID" "$BUNDLE_ID" -demo
-          sleep 45
-          xcrun simctl terminate "$UDID" "$BUNDLE_ID"
-          sleep 3
-          for theme in dark crt-green crt-amber light; do shoot "$theme" -theme "$theme"; done
-          shoot approval -demoApproval
-          shoot settings -demoSettings
+          for screen in start chat approval sidebar settings connection folder; do shoot "$screen" "$screen" dark; done
+          for theme in light terminal crt-green; do shoot "chat-$theme" chat "$theme"; done
 
       - uses: actions/upload-artifact@v4
         if: always()

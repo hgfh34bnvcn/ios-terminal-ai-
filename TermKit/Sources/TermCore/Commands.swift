@@ -9,7 +9,7 @@ public struct SlashCommand: Equatable, Sendable {
 public enum ParsedInput: Equatable, Sendable {
     case empty
     case prompt(String)
-    /// `!cmd`: run directly on the active SSH host, bypassing the model.
+    /// `!cmd`: run directly in the environment, bypassing the model.
     case shell(String)
     case command(name: String, args: String)
 }
@@ -17,24 +17,26 @@ public enum ParsedInput: Equatable, Sendable {
 public enum Commands {
     public static let all: [SlashCommand] = [
         .init(name: "help", usage: "/help", help: "list commands"),
-        .init(name: "setup", usage: "/setup", help: "add an API profile step by step"),
-        .init(name: "config", usage: "/config", help: "open settings"),
-        .init(name: "model", usage: "/model [id]", help: "show or switch model"),
-        .init(name: "profile", usage: "/profile [name]", help: "show or switch API profile"),
-        .init(name: "host", usage: "/host [name|off]", help: "show or switch SSH host"),
-        .init(name: "approve", usage: "/approve [ask|auto]", help: "tool approval mode"),
-        .init(name: "theme", usage: "/theme [id]", help: "show or switch theme"),
-        .init(name: "system", usage: "/system [text|reset]", help: "show or set the system prompt"),
         .init(name: "new", usage: "/new", help: "start a new session"),
-        .init(name: "sessions", usage: "/sessions [n]", help: "list or resume sessions"),
+        .init(name: "clear", usage: "/clear", help: "same as /new"),
+        .init(name: "resume", usage: "/resume", help: "open the session list"),
+        .init(name: "model", usage: "/model [id]", help: "show or switch model"),
+        .init(name: "effort", usage: "/effort [level]", help: "default, low, medium, high, xhigh, max"),
+        .init(name: "mode", usage: "/mode [name]", help: "ask, accept-edits, plan, bypass"),
+        .init(name: "env", usage: "/env [name|local]", help: "show or switch environment"),
+        .init(name: "cd", usage: "/cd [path]", help: "show or change the working folder"),
+        .init(name: "compact", usage: "/compact", help: "summarise the conversation to free context"),
+        .init(name: "init", usage: "/init", help: "write a CLAUDE.md for this folder"),
+        .init(name: "usage", usage: "/usage", help: "token use in this session"),
         .init(name: "retry", usage: "/retry", help: "resend the last prompt"),
         .init(name: "copy", usage: "/copy", help: "copy the last answer"),
         .init(name: "export", usage: "/export", help: "share the session as Markdown"),
-        .init(name: "clear", usage: "/clear", help: "clear the screen"),
+        .init(name: "theme", usage: "/theme [id]", help: "show or switch theme"),
+        .init(name: "config", usage: "/config", help: "open settings"),
     ]
 
     public static func parse(_ raw: String) -> ParsedInput {
-        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = raw.trimmed
         if text.isEmpty { return .empty }
         if text.hasPrefix("!") {
             let command = text.dropFirst().trimmingCharacters(in: .whitespaces)

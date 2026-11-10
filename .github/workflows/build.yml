@@ -12,8 +12,17 @@ permissions:
   contents: read
 
 jobs:
+  core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Core tests (Linux)
+        run: swift --version && swift test --package-path TermKit
+
   ipa:
-    runs-on: macos-latest
+    # Intel image: the arm64 macOS pool was leaving jobs queued until they timed out.
+    runs-on: macos-15-intel
     timeout-minutes: 45
     env:
       BUNDLE_ID: io.github.hgfh34bnvcn.termai

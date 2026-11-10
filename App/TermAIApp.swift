@@ -88,6 +88,16 @@ extension AppModel {
 }
 
 extension PermissionMode {
+    /// Short form for the chip under the composer, where four controls share one row.
+    var chipTitle: String {
+        switch self {
+        case .ask: return "Ask"
+        case .acceptEdits: return "Accept edits"
+        case .plan: return "Plan"
+        case .bypass: return "Bypass"
+        }
+    }
+
     var symbol: String {
         switch self {
         case .ask: return "hand.raised"

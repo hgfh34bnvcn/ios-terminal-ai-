@@ -187,7 +187,7 @@ private struct ChipRow: View {
                 Menu {
                     ModeOptions()
                 } label: {
-                    Chip(symbol: model.session.mode.symbol, text: model.session.mode.title,
+                    Chip(symbol: model.session.mode.symbol, text: model.session.mode.chipTitle,
                          tint: model.session.mode == .bypass ? palette.error : nil, palette: palette)
                 }
                 if let context = model.contextLabel {

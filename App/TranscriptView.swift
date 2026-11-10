@@ -172,7 +172,7 @@ private struct ToolRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button(action: toggle) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                HStack(alignment: .center, spacing: 8) {
                     glyph.font(.system(size: 11, weight: .bold)).frame(width: 14)
                     Text(item.tool ?? "Tool")
                         .font(palette.smallBold)

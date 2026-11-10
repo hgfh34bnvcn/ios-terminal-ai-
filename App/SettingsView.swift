@@ -36,6 +36,7 @@ struct SettingsView: View {
                 }
             }
         }
+        .tint(model.palette.accent)
         .onAppear {
             if model.demo == .connection, path.isEmpty, let first = model.profiles.first {
                 path = [.connection(first.id)]
@@ -380,6 +381,7 @@ private struct ConnectionEditor: View {
 private struct AddModelSheet: View {
     let discovered: [ModelInfo]
     let add: (String) -> Void
+    @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var custom = ""
     @State private var search = ""
@@ -436,6 +438,7 @@ private struct AddModelSheet: View {
                 }
             }
         }
+        .tint(model.palette.accent)
     }
 }
 
@@ -613,7 +616,7 @@ struct FolderPicker: View {
                             Button {
                                 choose(folder)
                             } label: {
-                                Label(folder, systemImage: "clock")
+                                row(folder, symbol: "clock")
                             }
                         }
                     }
@@ -631,14 +634,14 @@ struct FolderPicker: View {
                             Button {
                                 load(parent)
                             } label: {
-                                Label("..", systemImage: "arrow.up")
+                                row("..", symbol: "arrow.up")
                             }
                         }
                         ForEach(listing.directories, id: \.self) { name in
                             Button {
                                 load(listing.path == "/" ? "/" + name : listing.path + "/" + name)
                             } label: {
-                                Label(name, systemImage: "folder")
+                                row(name, symbol: "folder")
                             }
                         }
                         if listing.directories.isEmpty {
@@ -664,6 +667,15 @@ struct FolderPicker: View {
             .onAppear {
                 if listing == nil, !loading { load(model.session.folder) }
             }
+        }
+        .tint(model.palette.accent)
+    }
+
+    private func row(_ title: String, symbol: String) -> some View {
+        Label {
+            Text(title).foregroundStyle(Color.primary)
+        } icon: {
+            Image(systemName: symbol)
         }
     }
 

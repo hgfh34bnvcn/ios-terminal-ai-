@@ -40,6 +40,12 @@ struct RootView: View {
         .sheet(item: $model.shareItem) { item in
             ShareSheet(text: item.text)
         }
+        .task {
+            // Screenshot runs wait for this file before capturing; it is only written with sample content.
+            guard model.demo != nil else { return }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            try? Data().write(to: FileManager.default.temporaryDirectory.appendingPathComponent("demo-ready"))
+        }
     }
 }
 

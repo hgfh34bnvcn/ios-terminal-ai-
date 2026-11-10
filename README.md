@@ -43,6 +43,7 @@ For the Anthropic format there are also **Max output tokens** and **Prompt cachi
   A prompt offers **Deny**, **Allow once** and, where a safe rule exists, **Always allow** for the rest of the session (for example `git status` commands, edits, or one web domain). Chained or redirected commands never get a standing rule.
 - **Shell mode.** The terminal button in the top bar, or a leading `!`, runs a command on the SSH host yourself; the model is told what happened.
 - **Sessions.** The sidebar lists saved sessions grouped by environment and folder, with search, pin, rename and delete.
+- **Keep the app open while it works.** iOS suspends apps in the background, which cuts the response stream. The screen stays on while the agent is working (not while it waits for your answer), and switching away leaves a turn only the short grace period iOS allows. A session that was cut off keeps everything up to its last finished tool round; send a message to carry on.
 
 | Command | What it does |
 | --- | --- |

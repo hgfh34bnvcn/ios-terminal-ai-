@@ -4,7 +4,9 @@ import UIKit
 
 struct RootView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
     @FocusState private var composerFocused: Bool
+    @State private var backgroundTask = UIBackgroundTaskIdentifier.invalid
 
     var body: some View {
         @Bindable var model = model
@@ -31,6 +33,20 @@ struct RootView: View {
         .onChange(of: model.showSidebar) {
             if model.showSidebar { composerFocused = false }
         }
+        .onChange(of: keepsAwake) {
+            UIApplication.shared.isIdleTimerDisabled = keepsAwake
+        }
+        .onChange(of: model.isRunning) {
+            if !model.isRunning { endBackgroundTask() }
+        }
+        .onChange(of: scenePhase) {
+            // Leaving the app mid-task: ask iOS for the short grace period it allows, so a nearly finished turn can end.
+            if scenePhase == .background, model.isRunning, backgroundTask == .invalid {
+                backgroundTask = UIApplication.shared.beginBackgroundTask { endBackgroundTask() }
+            } else if scenePhase == .active {
+                endBackgroundTask()
+            }
+        }
         .sheet(isPresented: $model.showSettings) {
             SettingsView()
         }
@@ -46,6 +62,16 @@ struct RootView: View {
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             try? Data().write(to: FileManager.default.temporaryDirectory.appendingPathComponent("demo-ready"))
         }
+    }
+
+    /// A locked phone suspends the app and drops the response stream, so the screen stays on while the agent
+    /// works. Not while it waits for an answer: that can take any amount of time.
+    private var keepsAwake: Bool { model.isRunning && model.pendingApproval == nil }
+
+    private func endBackgroundTask() {
+        guard backgroundTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTask)
+        backgroundTask = .invalid
     }
 }
 
@@ -119,6 +145,7 @@ struct EnvironmentOptions: View {
         }
         Divider()
         Button {
+            model.settingsFocus = .newHost
             model.showSettings = true
         } label: {
             Label("Add SSH host…", systemImage: "plus")
@@ -180,6 +207,7 @@ struct StartView: View {
                 .foregroundStyle(palette.dim)
                 .multilineTextAlignment(.center)
             Button {
+                model.settingsFocus = .newConnection
                 model.showSettings = true
             } label: {
                 Text("Set up connection")

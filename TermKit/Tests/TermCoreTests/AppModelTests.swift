@@ -233,9 +233,14 @@ final class AppModelTests: XCTestCase {
         XCTAssertNil(fixture.storage.loadSession(id: first))
 
         // A fresh launch lists what was saved.
+        var cutOff = try XCTUnwrap(fixture.storage.loadSession(id: second))
+        cutOff.transcript.append(TranscriptItem(kind: .tool, text: "", title: "make", status: .running, tool: "Bash"))
+        fixture.storage.saveSession(cutOff)
         let relaunched = makeModel(profile: nil, hosts: [host]).model
         XCTAssertEqual(relaunched.summaries.map(\.title), ["second task"])
         XCTAssertTrue(relaunched.session.isEmpty)
+        relaunched.openSession(second)
+        XCTAssertEqual(relaunched.session.transcript.last?.status, .failed, "a tool the app was closed on is not left running")
     }
 
     @MainActor

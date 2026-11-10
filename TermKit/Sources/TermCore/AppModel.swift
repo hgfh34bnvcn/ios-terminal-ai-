@@ -62,6 +62,11 @@ public enum DemoScreen: String, Sendable, CaseIterable {
     case chat, start, approval, sidebar, settings, connection, folder
 }
 
+/// A page Settings should open on.
+public enum SettingsFocus: Sendable {
+    case newConnection, newHost
+}
+
 public protocol RemoteConnecting: Sendable {
     func connect(to host: SSHHost, secret: String, passphrase: String?) async throws -> RemoteConnection
 }
@@ -119,6 +124,8 @@ public final class AppModel {
     public var shellMode = false
     public var showSidebar = false
     public var showSettings = false
+    /// Set together with `showSettings` to land on a particular page.
+    public var settingsFocus: SettingsFocus?
     public var showFolderPicker = false
     public var shareItem: ShareItem?
     public private(set) var attachments: [Attachment] = []
@@ -143,6 +150,8 @@ public final class AppModel {
     @ObservationIgnored private var thinkingItem: UUID?
     @ObservationIgnored private var toolItems: [String: UUID] = [:]
     @ObservationIgnored private var warnedInsecure: Set<UUID> = []
+    @ObservationIgnored private var pendingOutput: [UUID: String] = [:]
+    @ObservationIgnored private var flushScheduled = false
 
     public init(dependencies: AppDependencies, demo: DemoScreen? = nil, theme: String? = nil) {
         self.dependencies = dependencies
@@ -302,6 +311,25 @@ public final class AppModel {
         }
     }
 
+    /// Command output can arrive in hundreds of small pieces a second; the screen is updated in batches.
+    private func queueOutput(_ id: UUID?, _ chunk: String) {
+        guard let id else { return }
+        pendingOutput[id, default: ""] += chunk
+        guard !flushScheduled else { return }
+        flushScheduled = true
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 80_000_000)
+            self?.flushOutput()
+        }
+    }
+
+    private func flushOutput() {
+        flushScheduled = false
+        let pending = pendingOutput
+        pendingOutput = [:]
+        for (id, text) in pending { appendOutput(id, text) }
+    }
+
     // MARK: Input
 
     public func submit() {
@@ -405,6 +433,7 @@ public final class AppModel {
     }
 
     private func finishRun() {
+        flushOutput()
         for index in session.transcript.indices where session.transcript[index].status == .running {
             session.transcript[index].status = .failed
         }
@@ -457,8 +486,9 @@ public final class AppModel {
             thinkingItem = nil
             toolItems[call.id] = append(.tool, "", title: info.summary, status: .running, tool: info.title)
         case .toolOutput(let id, let chunk):
-            appendOutput(toolItems[id], chunk)
+            queueOutput(toolItems[id], chunk)
         case .toolFinished(let id, let result, let denied):
+            flushOutput()
             mutate(toolItems[id]) { item in
                 item.status = denied ? .denied : (result.isError ? .failed : .ok)
                 item.diff = result.diff
@@ -624,7 +654,7 @@ public final class AppModel {
                 item = id
                 let (output, continuation) = AsyncStream<String>.makeStream()
                 let forwarder = Task { [weak self] in
-                    for await chunk in output { self?.appendOutput(id, chunk) }
+                    for await chunk in output { self?.queueOutput(id, chunk) }
                 }
                 let code: Int
                 do {
@@ -636,6 +666,7 @@ public final class AppModel {
                 }
                 continuation.finish()
                 await forwarder.value
+                self.flushOutput()
                 self.mutate(id) { $0.status = code == 0 ? .ok : .failed }
                 if code != 0 { self.appendOutput(id, "[exit \(code)]") }
                 let shown = self.session.transcript.first { $0.id == id }?.text ?? ""
@@ -721,9 +752,13 @@ public final class AppModel {
             return
         }
         guard !isRunning else { return busy() }
-        guard let loaded = dependencies.storage.loadSession(id: id) else {
+        guard var loaded = dependencies.storage.loadSession(id: id) else {
             summaries.removeAll { $0.id == id }
             return
+        }
+        // A run that was cut short by the app closing never reported how its tools ended.
+        for index in loaded.transcript.indices where loaded.transcript[index].status == .running {
+            loaded.transcript[index].status = .failed
         }
         persist()
         show(loaded)

@@ -266,6 +266,7 @@ private struct ModelOptions: View {
             }
         } else {
             Button("Set up a connection…") {
+                model.settingsFocus = .newConnection
                 model.showSettings = true
             }
         }

@@ -38,9 +38,15 @@ struct SettingsView: View {
         }
         .tint(model.palette.accent)
         .onAppear {
-            if model.demo == .connection, path.isEmpty, let first = model.profiles.first {
+            guard path.isEmpty else { return }
+            if model.demo == .connection, let first = model.profiles.first {
                 path = [.connection(first.id)]
+            } else if model.settingsFocus == .newHost {
+                path = [.host(nil)]
+            } else if model.settingsFocus == .newConnection {
+                path = [.connection(nil)]
             }
+            model.settingsFocus = nil
         }
     }
 

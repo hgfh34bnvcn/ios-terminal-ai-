@@ -40,7 +40,8 @@ jobs:
   ipa:
     # Intel image: the arm64 macOS pool was leaving jobs queued until they timed out.
     runs-on: macos-15-intel
-    timeout-minutes: 60
+    # Two builds, a simulator boot of ten minutes or more, and ten screenshots that each wait for the app.
+    timeout-minutes: 90
     env:
       BUNDLE_ID: io.github.hgfh34bnvcn.termai
     steps:
